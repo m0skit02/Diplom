@@ -1,11 +1,15 @@
 package telegram
 
-type UpdatesResponse struct {
-	Ok     bool     `json:"ok"`
-	Result []Update `json:"result"`
+type UserState struct {
+	ChatID           int64
+	PhoneNumber      string
+	VerificationCode string
+	Surname          string
+	Name             string
+	Patronymic       string
+	BirthDate        string
+	Email            string
+	Step             int
 }
 
-type Update struct {
-	ID      int    `json:"update_id"`
-	Message string `json:"message"`
-}
+var userStates = make(map[int64]*UserState)

@@ -1,33 +1,50 @@
-package TelegramBotFanzilla
+package main
 
 import (
 	"TelegramBotFanzilla/clients/telegram"
-	"flag"
+	"encoding/json"
+	"io/ioutil"
 	"log"
+	"os"
 )
 
-func main() {
-
-	tgClient := telegram.New(mustToken())
-
-	// fetcher = fetcher.New(tgClient)
-
-	// processor = processor.New(tgClient)
-
-	// consumer.Start(fetcher, processor)
+type Config struct {
+	TelegramBotToken string `json:"telegram_bot_token"`
 }
 
-func mustToken() string {
-	token := flag.String(
-		"token-bot-token",
-		"",
-		"token for access to telegram bot",
-	)
-	flag.Parse()
+func loadConfig() (*Config, error) {
+	file, err := os.Open("config.json")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
 
-	if *token == "" {
-		log.Fatal("token is not specified")
+	bytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, err
 	}
 
-	return *token
+	var config Config
+	if err := json.Unmarshal(bytes, &config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+func main() {
+	config, err := loadConfig()
+	if err != nil {
+		log.Fatalf("Error loading config: %v", err)
+	}
+
+	bot, err := telegram.New(config.TelegramBotToken)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	err = bot.ListenForUpdates()
+	if err != nil {
+		log.Panic(err)
+	}
 }
