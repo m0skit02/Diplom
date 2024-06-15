@@ -10,6 +10,7 @@ type UserState struct {
 	BirthDate        string
 	Email            string
 	Step             int
+	IsSubscribed     bool
 }
 
 var userStates = make(map[int64]*UserState)
