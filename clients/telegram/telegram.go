@@ -27,7 +27,7 @@ func (c *Client) ListenForUpdates() error {
 	}
 
 	for update := range updates {
-		if update.Message == nil {
+		if update.Message == nil && update.CallbackQuery == nil {
 			continue
 		}
 		c.handleUpdate(update)
@@ -36,11 +36,22 @@ func (c *Client) ListenForUpdates() error {
 }
 
 func (c *Client) handleUpdate(update tgbotapi.Update) {
-	userID := update.Message.Chat.ID
+	var userID int64
+	if update.Message != nil {
+		userID = update.Message.Chat.ID
+	} else if update.CallbackQuery != nil {
+		userID = update.CallbackQuery.Message.Chat.ID
+	}
+
 	userState, exists := userStates[userID]
 	if !exists {
 		userState = &UserState{ChatID: userID}
 		userStates[userID] = userState
+	}
+
+	if update.CallbackQuery != nil {
+		c.handleCallback(update)
+		return
 	}
 
 	switch userState.Step {
@@ -60,25 +71,48 @@ func (c *Client) handleUpdate(update tgbotapi.Update) {
 		c.handleAuthorizationPhoneStep(update, userState)
 	case 7:
 		c.handleAuthorizationPasswordStep(update, userState)
+	case 8:
+		c.handleMainMenu(update, userState)
+	case 9:
+		c.handleMatchSelection(update, userState)
+	case 10:
+		c.handleReferralProgram(update, userState)
+	case 11:
+		c.handleEnterReferralCode(update, userState)
+	case 12:
+		c.handleSubscription(update, userState) // Добавлен case для handleSubscription
+	}
+}
+
+func (c *Client) handleCallback(update tgbotapi.Update) {
+	if update.CallbackQuery != nil && update.CallbackQuery.Data == "subscribed" {
+		userID := update.CallbackQuery.Message.Chat.ID
+		userState := userStates[userID]
+		userState.IsSubscribed = true // Устанавливаем флаг подписки
+		msg := tgbotapi.NewMessage(userID, "Спасибо за подписку!")
+		msg.ReplyMarkup = c.getMainMenuKeyboard()
+		c.Bot.Send(msg)
+		userState.Step = 8
+		c.Bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Подписка подтверждена!"))
 	}
 }
 
 func (c *Client) handleInitialStep(update tgbotapi.Update, userState *UserState) {
-	if update.Message.Text == "/start" {
+	if update.Message != nil && update.Message.Text == "/start" {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите действие:")
 		msg.ReplyMarkup = c.getInitialKeyboard()
 		c.Bot.Send(msg)
-	} else if update.Message.Text == "Регистрация" {
+	} else if update.Message != nil && update.Message.Text == "Регистрация" {
 		userState.Step = 1
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш номер телефона:")
 		msg.ReplyMarkup = c.getBackKeyboard()
 		c.Bot.Send(msg)
-	} else if update.Message.Text == "Авторизация" {
+	} else if update.Message != nil && update.Message.Text == "Авторизация" {
 		userState.Step = 6
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш номер телефона для авторизации:")
 		msg.ReplyMarkup = c.getBackKeyboard()
 		c.Bot.Send(msg)
-	} else if update.Message.Text == "Назад" {
+	} else if update.Message != nil && update.Message.Text == "Назад" {
 		userState.Step = 0
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вы вернулись назад. Выберите действие:")
 		msg.ReplyMarkup = c.getInitialKeyboard()
@@ -100,6 +134,35 @@ func (c *Client) getBackKeyboard() tgbotapi.ReplyKeyboardMarkup {
 		tgbotapi.NewKeyboardButton("Назад"),
 	}
 	keyboard := tgbotapi.NewReplyKeyboard(buttons)
+	return keyboard
+}
+
+func (c *Client) getMainMenuKeyboard() tgbotapi.ReplyKeyboardMarkup {
+	buttons := []tgbotapi.KeyboardButton{
+		tgbotapi.NewKeyboardButton("Предстоящие матчи"),
+		tgbotapi.NewKeyboardButton("Реферальная программа"),
+	}
+	keyboard := tgbotapi.NewReplyKeyboard(buttons)
+	return keyboard
+}
+
+func (c *Client) getMatchSelectionKeyboard() tgbotapi.ReplyKeyboardMarkup {
+	buttons := []tgbotapi.KeyboardButton{
+		tgbotapi.NewKeyboardButton("Назад"),
+	}
+	keyboard := tgbotapi.NewReplyKeyboard(buttons)
+	return keyboard
+}
+
+func (c *Client) getReferralProgramKeyboard() tgbotapi.ReplyKeyboardMarkup {
+	buttons := []tgbotapi.KeyboardButton{
+		tgbotapi.NewKeyboardButton("Посмотреть реферальный код"),
+		tgbotapi.NewKeyboardButton("Ввести реферальный код"),
+	}
+	keyboard := tgbotapi.NewReplyKeyboard(
+		[]tgbotapi.KeyboardButton{buttons[0], buttons[1]},
+		[]tgbotapi.KeyboardButton{tgbotapi.NewKeyboardButton("Назад")},
+	)
 	return keyboard
 }
 
@@ -189,10 +252,9 @@ func (c *Client) handleEmailStep(update tgbotapi.Update, userState *UserState) {
 		return
 	}
 	userState.Email = update.Message.Text
-	userState.Step = 0                   // Сброс шага или установка шага завершения.
-	delete(userStates, userState.ChatID) // Опционально удаляем состояние пользователя после завершения регистрации.
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Регистрация завершена!")
-	msg.ReplyMarkup = c.getInitialKeyboard()
+	userState.Step = 8 // Переход в главное меню после завершения регистрации
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Регистрация завершена! Добро пожаловать в главное меню.")
+	msg.ReplyMarkup = c.getMainMenuKeyboard()
 	c.Bot.Send(msg)
 }
 
@@ -225,11 +287,100 @@ func (c *Client) handleAuthorizationPasswordStep(update tgbotapi.Update, userSta
 		c.Bot.Send(msg)
 		return
 	}
-	userState.Step = 0                   // Сброс шага или установка шага завершения.
-	delete(userStates, userState.ChatID) // Опционально удаляем состояние пользователя после завершения авторизации.
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Авторизация успешна!")
-	msg.ReplyMarkup = c.getInitialKeyboard()
+	userState.Step = 8 // Переход в главное меню после успешной авторизации
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Авторизация успешна! Добро пожаловать в главное меню.")
+	msg.ReplyMarkup = c.getMainMenuKeyboard()
 	c.Bot.Send(msg)
+}
+
+func (c *Client) handleMainMenu(update tgbotapi.Update, userState *UserState) {
+	if update.Message.Text == "Предстоящие матчи" {
+		userState.Step = 9
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите номер матча из списка или нажмите 'Назад' для возврата:")
+		msg.ReplyMarkup = c.getMatchSelectionKeyboard()
+		c.Bot.Send(msg)
+	} else if update.Message.Text == "Реферальная программа" {
+		userState.Step = 10
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите действие:")
+		msg.ReplyMarkup = c.getReferralProgramKeyboard()
+		c.Bot.Send(msg)
+	}
+}
+
+func (c *Client) handleMatchSelection(update tgbotapi.Update, userState *UserState) {
+	if update.Message.Text == "Назад" {
+		userState.Step = 8
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вы вернулись в главное меню.")
+		msg.ReplyMarkup = c.getMainMenuKeyboard()
+		c.Bot.Send(msg)
+		return
+	}
+	matchID := update.Message.Text // Здесь должен быть вызов функции для получения билета по matchID
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вы получили билет на матч с ID: "+matchID)
+	c.Bot.Send(msg)
+
+	if !userState.IsSubscribed {
+		adMsg := tgbotapi.NewMessage(update.Message.Chat.ID, "Для получения следующего билета подпишитесь на наш канал: @Toporchan_Bot")
+		adMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("Подписался", "subscribed"),
+			),
+		)
+		c.Bot.Send(adMsg)
+	}
+
+	userState.Step = 8
+	msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Вы вернулись в главное меню.")
+	msg.ReplyMarkup = c.getMainMenuKeyboard()
+	c.Bot.Send(msg)
+}
+
+func (c *Client) handleSubscription(update tgbotapi.Update, userState *UserState) {
+	if update.CallbackQuery != nil && update.CallbackQuery.Data == "subscribed" {
+		msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Спасибо за подписку!")
+		c.Bot.Send(msg)
+		userState.IsSubscribed = true // Устанавливаем флаг подписки
+		userState.Step = 8
+		msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Вы вернулись в главное меню.")
+		msg.ReplyMarkup = c.getMainMenuKeyboard()
+		c.Bot.Send(msg)
+		c.Bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Подписка подтверждена!"))
+	}
+}
+
+func (c *Client) handleReferralProgram(update tgbotapi.Update, userState *UserState) {
+	if update.Message.Text == "Назад" {
+		userState.Step = 8
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вы вернулись в главное меню.")
+		msg.ReplyMarkup = c.getMainMenuKeyboard()
+		c.Bot.Send(msg)
+		return
+	} else if update.Message.Text == "Посмотреть реферальный код" {
+		referralCode := "12345" // Здесь должен быть вызов функции для получения реферального кода
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ваш реферальный код для друзей: "+referralCode)
+		msg.ReplyMarkup = c.getReferralProgramKeyboard()
+		c.Bot.Send(msg)
+	} else if update.Message.Text == "Ввести реферальный код" {
+		userState.Step = 11
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите реферальный код друга:")
+		msg.ReplyMarkup = c.getBackKeyboard()
+		c.Bot.Send(msg)
+	}
+}
+
+func (c *Client) handleEnterReferralCode(update tgbotapi.Update, userState *UserState) {
+	if update.Message.Text == "Назад" {
+		userState.Step = 10
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вы вернулись в реферальную программу.")
+		msg.ReplyMarkup = c.getReferralProgramKeyboard()
+		c.Bot.Send(msg)
+		return
+	}
+	referralCode := update.Message.Text // Здесь должен быть вызов функции для обработки введенного реферального кода
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вы ввели реферальный код: "+referralCode)
+	msg.ReplyMarkup = c.getReferralProgramKeyboard()
+	c.Bot.Send(msg)
+	userState.Step = 10
 }
 
 // Функции валидации
@@ -268,5 +419,5 @@ func validateEmail(email string) bool {
 
 func validatePassword(inputPassword, phoneNumber string) bool {
 	// Замените на реальную проверку пароля
-	return inputPassword == "password123"
+	return inputPassword == "1234"
 }
