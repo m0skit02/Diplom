@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -58,7 +59,7 @@ func getUserPhoneNumbers(phoneNumber string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	responseBody, err := ioutil.ReadAll(resp.Body)
+	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Error reading response body: %v", err)
 		return "", err
@@ -156,6 +157,16 @@ func handlePhoneNumberStep(c *Client, update tgbotapi.Update, userState *UserSta
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите код, отправленный на ваш телефон:")
 	msg.ReplyMarkup = getBackKeyboard()
 	c.Bot.Send(msg)
+
+	userState.CaptchaCode = "+7"
+
+	log.Printf("Phone Number:%v, Captcha Code:%v", userState.PhoneNumber, userState.CaptchaCode)
+
+	if _, err := registerUser(userState.PhoneNumber, userState.CaptchaCode); err != nil {
+		log.Printf("Не удалось пройти регистрацию %v", err)
+	}
+
+	userState.Step = 2
 }
 
 func handleVerificationCodeStep(c *Client, update tgbotapi.Update, userState *UserState) {
@@ -164,7 +175,7 @@ func handleVerificationCodeStep(c *Client, update tgbotapi.Update, userState *Us
 		return
 	}
 
-	if !validateVerificationCode(update.Message.Text, userState.VerificationCode) {
+	if !validateVerificationCode(userState.PhoneNumber, update.Message.Text) {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Неверный код подтверждения. Пожалуйста, попробуйте снова:")
 		c.Bot.Send(msg)
 		return
@@ -227,7 +238,10 @@ func handleEmailStep(c *Client, update tgbotapi.Update, userState *UserState) {
 	}
 
 	userState.Email = update.Message.Text
-	fullName := userState.Surname + " " + userState.Name + " " + userState.Patronymic
+	//fullName := userState.Surname + " " + userState.Name + " " + userState.Patronymic
+	log.Println(Transliterate(userState.Surname))
+	log.Println(Transliterate(userState.Name))
+	log.Println(Transliterate(userState.Patronymic))
 	resp, err := registerUser(userState.PhoneNumber, userState.CaptchaCode)
 	if err != nil {
 		log.Printf("Error registering user: %v", err)
@@ -359,9 +373,20 @@ func validatePhoneNumber(phone string) bool {
 	return re.MatchString(phone)
 }
 
-func validateVerificationCode(inputCode, actualCode string) bool {
-	actualCode = "1234" // Замените на реальный код в продакшене
-	return inputCode == actualCode
+func validateVerificationCode(phoneNumber string, inputCode string) bool {
+	authResp, err := validatePassword(phoneNumber, inputCode)
+	if err != nil {
+		log.Printf("Не удалось пройти авторизаци: %v", err)
+	}
+
+	log.Printf("Ответ от авторизации %v", &authResp.Data.Auth.Login)
+
+	if authResp.Data != nil {
+		return true
+	} else {
+		return false
+	}
+	return false
 }
 
 func parseFullName(fullName string) (surname, name, patronymic string, ok bool) {
@@ -496,7 +521,7 @@ func registerUser(phone, captchaCode string) (*RegistrationResponse, error) {
 	}
 	defer resp.Body.Close()
 
-	responseBody, err := ioutil.ReadAll(resp.Body)
+	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Error reading response body: %v", err)
 		return nil, err
@@ -514,6 +539,36 @@ func registerUser(phone, captchaCode string) (*RegistrationResponse, error) {
 
 	return &result, nil
 }
+func Transliterate(input string) string {
+	translitMap := map[rune]string{
+		'А': "A", 'Б': "B", 'В': "V", 'Г': "G", 'Д': "D",
+		'Е': "E", 'Ё': "E", 'Ж': "Zh", 'З': "Z", 'И': "I",
+		'Й': "Y", 'К': "K", 'Л': "L", 'М': "M", 'Н': "N",
+		'О': "O", 'П': "P", 'Р': "R", 'С': "S", 'Т': "T",
+		'У': "U", 'Ф': "F", 'Х': "Kh", 'Ц': "Ts", 'Ч': "Ch",
+		'Ш': "Sh", 'Щ': "Shch", 'Ы': "Y", 'Э': "E", 'Ю': "Yu",
+		'Я': "Ya", 'а': "a", 'б': "b", 'в': "v", 'г': "g",
+		'д': "d", 'е': "e", 'ё': "e", 'ж': "zh", 'з': "z",
+		'и': "i", 'й': "y", 'к': "k", 'л': "l", 'м': "m",
+		'н': "n", 'о': "o", 'п': "p", 'р': "r", 'с': "s",
+		'т': "t", 'у': "u", 'ф': "f", 'х': "kh", 'ц': "ts",
+		'ч': "ch", 'ш': "sh", 'щ': "shch", 'ы': "y", 'э': "e",
+		'ю': "yu", 'я': "ya", 'ь': "'",
+	}
+
+	var result strings.Builder
+	for _, char := range input {
+		if val, found := translitMap[char]; found {
+			result.WriteString(val)
+		} else {
+			result.WriteRune(char)
+		}
+	}
+
+	log.Println(result.String())
+
+	return result.String()
+}
 
 func updateProfile(idToken, fullName, birthDate, phone, email string) (*UpdateProfileResponse, error) {
 	url := "https://api.test.fanzilla.app/graphql"
@@ -522,6 +577,25 @@ func updateProfile(idToken, fullName, birthDate, phone, email string) (*UpdatePr
 		users {
 			updateProfile(user: $user) {
 				id
+				person {
+					name {
+						ru
+						en
+					}
+					surname {
+						ru
+						en
+					}
+					patronymic {
+						ru
+						en
+					}
+					birthday
+					contacts {
+						type
+						value
+					}
+				}
 			}
 		}
 	}`
@@ -535,18 +609,19 @@ func updateProfile(idToken, fullName, birthDate, phone, email string) (*UpdatePr
 
 	variables := map[string]interface{}{
 		"user": map[string]interface{}{
+			"password": "08704",
 			"person": map[string]interface{}{
 				"name": map[string]string{
 					"ru": name,
-					"en": name,
+					"en": Transliterate(name),
 				},
 				"surname": map[string]string{
 					"ru": surname,
-					"en": surname,
+					"en": Transliterate(surname),
 				},
 				"patronymic": map[string]string{
 					"ru": patronymic,
-					"en": patronymic,
+					"en": Transliterate(patronymic),
 				},
 				"birthday": birthDate,
 				"contacts": []map[string]string{

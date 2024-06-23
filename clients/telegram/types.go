@@ -189,7 +189,7 @@ type BotAuthTokens struct {
 var userStates = make(map[int64]*UserState)
 
 type AuthResponse struct {
-	Data struct {
+	Data *struct {
 		Auth struct {
 			Login struct {
 				AccessToken  string `json:"accessToken"`
@@ -432,9 +432,31 @@ type UpdateProfileInput struct {
 
 type UpdateProfileResponse struct {
 	Data struct {
-		UpdateProfile struct {
-			ID    string `json:"id"`
-			Login string `json:"login"`
-		} `json:"updateProfile"`
+		Users struct {
+			UpdateProfile struct {
+				ID     string `json:"id"`
+				Person struct {
+					Name struct {
+						Ru string `json:"ru"`
+						En string `json:"en"`
+					} `json:"name"`
+					Surname struct {
+						Ru string `json:"ru"`
+						En string `json:"en"`
+					} `json:"surname"`
+					Patronymic struct {
+						Ru string `json:"ru"`
+						En string `json:"en"`
+					} `json:"patronymic"`
+					Birthday string      `json:"birthday"`
+					Photo    interface{} `json:"photo"`
+					Job      interface{} `json:"job"`
+					Contacts []struct {
+						Type  string `json:"type"`
+						Value string `json:"value"`
+					} `json:"contacts"`
+				} `json:"person"`
+			} `json:"updateProfile"`
+		} `json:"users"`
 	} `json:"data"`
 }
