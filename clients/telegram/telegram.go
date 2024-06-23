@@ -1,7 +1,9 @@
 package telegram
 
 import (
+	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	"time"
 )
 
 func New(token string) (*Client, error) {
@@ -10,23 +12,6 @@ func New(token string) (*Client, error) {
 		return nil, err
 	}
 	return &Client{Bot: bot}, nil
-}
-
-func (c *Client) ListenForUpdates() error {
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-	updates, err := c.Bot.GetUpdatesChan(u)
-	if err != nil {
-		return err
-	}
-
-	for update := range updates {
-		if update.Message == nil && update.CallbackQuery == nil {
-			continue
-		}
-		handleUpdate(update)
-	}
-	return nil
 }
 
 func (c *Client) handleUpdate(update tgbotapi.Update) {
@@ -68,37 +53,92 @@ func (c *Client) handleUpdate(update tgbotapi.Update) {
 	case 8:
 		handleMainMenu(c, update, userState)
 	case 9:
-		handleMatchSelection(c, update, userState)
+		handleViewMatches(c, update, userState)
 	case 10:
-		handleReferralProgram(c, update, userState)
-	case 11:
-		handleEnterReferralCode(c, update, userState)
+		handleMatchSelection(c, update, userState)
 	case 12:
 		handleSubscription(c, update, userState)
 	}
 }
 
+func (c *Client) ListenForUpdates() error {
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+	updates, err := c.Bot.GetUpdatesChan(u)
+	if err != nil {
+		return err
+	}
+
+	for update := range updates {
+		if update.Message == nil && update.CallbackQuery == nil {
+			continue
+		}
+		c.handleUpdate(update) // убедитесь, что используете 'с' как ссылку на экземпляр 'Client'
+	}
+	return nil
+}
+
 func handleMainMenu(c *Client, update tgbotapi.Update, userState *UserState) {
 	if update.Message.Text == "Предстоящие матчи" {
-		userState.Step = 9
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите номер матча из списка или нажмите 'Назад' для возврата:")
-		msg.ReplyMarkup = getMatchSelectionKeyboard()
+		userState.Step = 9 // Переход к выбору матчей
+
+		matches, err := getMatchesForTeam(userState.IDToken)
+		if err != nil {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Произошла ошибка при получении списка матчей: "+err.Error())
+			c.Bot.Send(msg)
+			return
+		}
+
+		if len(matches) == 0 {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Матчи не найдены.")
+			c.Bot.Send(msg)
+			return
+		}
+
+		responseText := "Список предстоящих матчей:\n"
+		for i, match := range matches {
+			startTime := formatDateTime(match.StartTime)
+			matchInfo := fmt.Sprintf("%d. %s\n   %s - %s\n   %s (%s)\n\n",
+				i+1,
+				match.Title,
+				startTime,
+				match.Stage.Title,
+				match.Venue.Title,
+				match.Venue.Location)
+			responseText += matchInfo
+			if len(responseText) > 4000 { // Проверка на превышение максимального размера сообщения
+				break
+			}
+		}
+		fmt.Printf("Получено матчей: %d\n", len(matches))
+		for i, match := range matches {
+			fmt.Printf("Матч %d: %s\n", i+1, match.Title)
+		}
+
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, responseText)
+		msg.ReplyMarkup = getBackKeyboard() // Предоставляем возможность вернуться назад
 		c.Bot.Send(msg)
-	} else if update.Message.Text == "Реферальная программа" {
-		userState.Step = 10
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите действие:")
-		msg.ReplyMarkup = getReferralProgramKeyboard()
-		c.Bot.Send(msg)
+
+		userState.Step = 10 // Переход к выбору конкретного матча
 	}
 }
 
-func getInitialKeyboard() tgbotapi.ReplyKeyboardMarkup {
-	buttons := []tgbotapi.KeyboardButton{
-		tgbotapi.NewKeyboardButton("Регистрация"),
-		tgbotapi.NewKeyboardButton("Авторизация"),
+// Функция для форматирования даты и времени на русском языке
+func formatDateTime(dateTimeStr string) string {
+	t, err := time.Parse(time.RFC3339, dateTimeStr)
+	if err != nil {
+		return "неизвестно"
 	}
-	keyboard := tgbotapi.NewReplyKeyboard(buttons)
-	return keyboard
+	return t.Format("02.01.2006 в 15:04")
+}
+
+func getInitialKeyboard() tgbotapi.ReplyKeyboardMarkup {
+	return tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("Регистрация"),
+			tgbotapi.NewKeyboardButton("Авторизация"),
+		),
+	)
 }
 
 func getBackKeyboard() tgbotapi.ReplyKeyboardMarkup {
@@ -112,7 +152,6 @@ func getBackKeyboard() tgbotapi.ReplyKeyboardMarkup {
 func getMainMenuKeyboard() tgbotapi.ReplyKeyboardMarkup {
 	buttons := []tgbotapi.KeyboardButton{
 		tgbotapi.NewKeyboardButton("Предстоящие матчи"),
-		tgbotapi.NewKeyboardButton("Реферальная программа"),
 	}
 	keyboard := tgbotapi.NewReplyKeyboard(buttons)
 	return keyboard
@@ -123,17 +162,5 @@ func getMatchSelectionKeyboard() tgbotapi.ReplyKeyboardMarkup {
 		tgbotapi.NewKeyboardButton("Назад"),
 	}
 	keyboard := tgbotapi.NewReplyKeyboard(buttons)
-	return keyboard
-}
-
-func getReferralProgramKeyboard() tgbotapi.ReplyKeyboardMarkup {
-	buttons := []tgbotapi.KeyboardButton{
-		tgbotapi.NewKeyboardButton("Посмотреть реферальный код"),
-		tgbotapi.NewKeyboardButton("Ввести реферальный код"),
-	}
-	keyboard := tgbotapi.NewReplyKeyboard(
-		[]tgbotapi.KeyboardButton{buttons[0], buttons[1]},
-		[]tgbotapi.KeyboardButton{tgbotapi.NewKeyboardButton("Назад")},
-	)
 	return keyboard
 }

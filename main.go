@@ -6,11 +6,11 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"time"
 )
 
 type Config struct {
 	TelegramBotToken string `json:"telegram_bot_token"`
+	FanzillaToken    string `json:"token_fanzilla"`
 }
 
 func loadConfig() (*Config, error) {
@@ -39,20 +39,20 @@ func main() {
 		log.Fatalf("Error loading config: %v", err)
 	}
 
-	// Авторизация бота при запуске
-	if err = telegram.AuthorizeBot(); err != nil {
-		log.Fatalf("Error authorizing bot: %v", err)
-	}
-
-	// Обновление токена каждые 30 дней
-	go func() {
-		for {
-			time.Sleep(30 * 24 * time.Hour)
-			if err := telegram.AuthorizeBot(); err != nil {
-				log.Printf("Error refreshing bot token: %v", err)
-			}
-		}
-	}()
+	//// Авторизация бота при запуске
+	//if err = telegram.AuthorizeBot(); err != nil {
+	//	log.Fatalf("Error authorizing bot: %v", err)
+	//}
+	//
+	//// Обновление токена каждые 30 дней
+	//go func() {
+	//	for {
+	//		time.Sleep(30 * 24 * time.Hour)
+	//		if err := telegram.AuthorizeBot(); err != nil {
+	//			log.Printf("Error refreshing bot token: %v", err)
+	//		}
+	//	}
+	//}()
 
 	bot, err := telegram.New(config.TelegramBotToken)
 	if err != nil {

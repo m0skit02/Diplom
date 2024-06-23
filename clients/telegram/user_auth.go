@@ -7,53 +7,64 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
-type UserResponse struct {
-	Data struct {
-		Users struct {
-			FindByLogin *struct {
-				Login string `json:"login"`
-			} `json:"findByLogin"`
-		} `json:"users"`
-	} `json:"data"`
-}
-
-// getUserPhoneNumbers отправляет запрос на сервер для получения информации о пользователе по номеру телефона
 func getUserPhoneNumbers(phoneNumber string) (string, error) {
 	url := "https://api.test.fanzilla.app/graphql"
 
-	query := fmt.Sprintf(`{"query": "query{ users{ findByLogin(login: \"%s\"){ login } } }"}`, phoneNumber)
+	// Нормализация номера телефона для запроса
+	normalizedPhone := normalizePhoneNumber(phoneNumber)
 
-	reqBody, err := json.Marshal(map[string]string{"query": query})
+	query := `query findUserByLogin($login: String!) {
+        users {
+            findByLogin(login: $login) {
+                login
+            }
+        }
+    }`
+	variables := map[string]interface{}{
+		"login": normalizedPhone,
+	}
+	requestBody := map[string]interface{}{
+		"query":     query,
+		"variables": variables,
+	}
+
+	reqBody, err := json.Marshal(requestBody)
 	if err != nil {
+		log.Printf("Error marshalling request body: %v", err)
 		return "", err
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
+		log.Printf("Error creating request: %v", err)
 		return "", err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+botAuthTokens.IDToken) // Используем токен бота
+	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoiRVZKNUVkaWd1OU41WnRGQmlkRTR2OHFJUk5LamdPMlN6US95d3ZoOWFWYz0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzE5NTI0MzEyfQ.YcKKN61dlmSMgKb9dlOUrGtmg2QUDW8auL5331XJ4Djyrg9ghkOST34TmLlbtFBDx0METlonBs4aItID7ZCQDA") // Replace with your actual token
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Printf("Error sending request: %v", err)
 		return "", err
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("Error reading response body: %v", err)
 		return "", err
 	}
 
+	log.Printf("GraphQL response: %s", responseBody)
 	return string(responseBody), nil
 }
 
@@ -71,13 +82,19 @@ func checkPhoneNumber(phoneNumber string) (bool, error) {
 		return false, err
 	}
 
-	if userResponse.Data.Users.FindByLogin == nil {
-		log.Printf("Phone number not found in DB: %s", phoneNumber)
-		return false, nil
-	}
+	exists := userResponse.Data.Users.FindByLogin != nil
+	log.Printf("Phone number %s found in DB: %v", phoneNumber, exists)
+	return exists, nil
+}
 
-	log.Printf("Phone number found in DB: %s", phoneNumber)
-	return true, nil
+// Нормализует номер телефона, удаляя лишние символы и преобразуя в нужный формат.
+func normalizePhoneNumber(phone string) string {
+	phone = strings.TrimSpace(phone)
+	phone = strings.NewReplacer("+", "", "-", "", " ", "").Replace(phone)
+	if strings.HasPrefix(phone, "8") {
+		phone = "7" + phone[1:]
+	}
+	return phone
 }
 
 func handleInitialStep(c *Client, update tgbotapi.Update, userState *UserState) {
@@ -111,9 +128,12 @@ func handlePhoneNumberStep(c *Client, update tgbotapi.Update, userState *UserSta
 
 	if !validatePhoneNumber(update.Message.Text) {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Неверный формат номера. Пожалуйста, введите правильный номер:")
+		msg.ReplyMarkup = getInitialKeyboard() // Возвращаем пользователя к выбору регистрации или авторизации
 		c.Bot.Send(msg)
+		userState.Step = 0 // Возвращаем на начальный шаг
 		return
 	}
+
 	userState.PhoneNumber = normalizePhoneNumber(update.Message.Text)
 	userState.Step = 2
 
@@ -125,9 +145,11 @@ func handlePhoneNumberStep(c *Client, update tgbotapi.Update, userState *UserSta
 		return
 	}
 
-	if !valid {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Номер телефона не найден в базе данных. Пожалуйста, зарегистрируйтесь.")
+	if valid {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Номер телефона уже зарегистрирован. Используйте другой номер или функцию восстановления пароля.")
+		msg.ReplyMarkup = getInitialKeyboard() // Предоставляем выбор действий
 		c.Bot.Send(msg)
+		userState.Step = 0 // Возвращаем на начальный шаг
 		return
 	}
 
@@ -203,8 +225,40 @@ func handleEmailStep(c *Client, update tgbotapi.Update, userState *UserState) {
 		c.Bot.Send(msg)
 		return
 	}
+
 	userState.Email = update.Message.Text
-	userState.Step = 8 // Переход в главное меню после завершения регистрации
+	fullName := userState.Surname + " " + userState.Name + " " + userState.Patronymic
+	resp, err := registerUser(userState.PhoneNumber, userState.CaptchaCode)
+	if err != nil {
+		log.Printf("Error registering user: %v", err)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Произошла ошибка при регистрации. Попробуйте позже.")
+		c.Bot.Send(msg)
+		return
+	}
+
+	// Проверяем, что IDToken существует и не пуст
+	if resp.Data.RegisterUserAndLogin.IDToken == "" {
+		log.Printf("Received empty ID token during registration. IDToken: %v", resp.Data.RegisterUserAndLogin.IDToken)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка регистрации: не получен токен доступа.")
+		c.Bot.Send(msg)
+		return
+	}
+
+	// Сохранение IDToken для будущих запросов
+	userState.IDToken = resp.Data.RegisterUserAndLogin.IDToken
+
+	// Логирование для проверки присвоения токена
+	log.Printf("User IDToken assigned after registration: %v", userState.IDToken)
+
+	// Сохранение токена в файл
+	if err := saveTokenToFile(userState.IDToken); err != nil {
+		log.Printf("Error saving token to file: %v", err)
+	} else {
+		log.Println("Token saved to file successfully")
+	}
+
+	// Переход в главное меню после успешной регистрации
+	userState.Step = 8
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Регистрация завершена! Добро пожаловать в главное меню.")
 	msg.ReplyMarkup = getMainMenuKeyboard()
 	c.Bot.Send(msg)
@@ -218,9 +272,12 @@ func handleAuthorizationPhoneStep(c *Client, update tgbotapi.Update, userState *
 
 	if !validatePhoneNumber(update.Message.Text) {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Неверный формат номера. Пожалуйста, введите правильный номер:")
+		msg.ReplyMarkup = getInitialKeyboard() // Возвращаем пользователя к выбору регистрации или авторизации
 		c.Bot.Send(msg)
+		userState.Step = 0 // Возвращаем на начальный шаг
 		return
 	}
+
 	userState.PhoneNumber = normalizePhoneNumber(update.Message.Text)
 	userState.Step = 7
 
@@ -233,12 +290,15 @@ func handleAuthorizationPhoneStep(c *Client, update tgbotapi.Update, userState *
 	}
 
 	if !valid {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Номер телефона не найден в базе данных. Пожалуйста, зарегистрируйтесь.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Номер телефона не найден в базе данных. Пожалуйста, зарегистрируйтесь или попробуйте другой номер для авторизации.")
+		msg.ReplyMarkup = getInitialKeyboard() // Предоставляем выбор действий
 		c.Bot.Send(msg)
+		userState.Step = 0 // Возвращаем на начальный шаг
 		return
 	}
 
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите пароль, отправленный на ваш телефон при регистрации:")
+	// Только если номер найден, разрешаем ввод пароля
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите пароль, отправленный на ваш телефон:")
 	msg.ReplyMarkup = getBackKeyboard()
 	c.Bot.Send(msg)
 }
@@ -249,24 +309,49 @@ func handleAuthorizationPasswordStep(c *Client, update tgbotapi.Update, userStat
 		return
 	}
 
-	if !validatePassword(update.Message.Text, userState.PhoneNumber) {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Неверный пароль. Пожалуйста, попробуйте снова:")
+	authResponse, err := validatePassword(userState.PhoneNumber, update.Message.Text)
+	if err != nil {
+		if strings.Contains(err.Error(), "BAD_CREDENTIALS") {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введен неверный пароль. Пожалуйста, попробуйте еще раз или восстановите пароль, если забыли его.")
+			msg.ReplyMarkup = getBackKeyboard() // Предоставляет пользователю возможность вернуться и попробовать снова
+			c.Bot.Send(msg)
+		} else {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Ошибка авторизации: %v", err))
+			msg.ReplyMarkup = getBackKeyboard()
+			c.Bot.Send(msg)
+		}
+		return
+	}
+
+	// Добавляем логирование для отладки
+	log.Printf("Auth response: %+v", authResponse)
+
+	// Проверяем, что idToken существует и не пуст
+	if authResponse.Data.Auth.Login.IDToken == "" {
+		log.Printf("Received empty ID token. IDToken: %v", authResponse.Data.Auth.Login.IDToken)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка авторизации: не получен токен доступа.")
 		c.Bot.Send(msg)
 		return
 	}
-	userState.Step = 8 // Переход в главное меню после успешной авторизации
+
+	// Сохранение idToken для будущих запросов
+	userState.IDToken = authResponse.Data.Auth.Login.IDToken
+
+	// Логирование для проверки присвоения токена
+	log.Printf("User IDToken assigned: %v", userState.IDToken)
+
+	// Сохранение токена в файл
+	if err := saveTokenToFile(userState.IDToken); err != nil {
+		log.Printf("Error saving token to file: %v", err)
+	} else {
+		log.Println("Token saved to file successfully")
+	}
+
+	// Переход в главное меню после успешной авторизации
+	userState.Step = 8
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Авторизация успешна! Добро пожаловать в главное меню.")
 	msg.ReplyMarkup = getMainMenuKeyboard()
 	c.Bot.Send(msg)
-}
-
-func normalizePhoneNumber(phone string) string {
-	if strings.HasPrefix(phone, "+7") {
-		return phone[1:]
-	} else if strings.HasPrefix(phone, "8") {
-		return "7" + phone[1:]
-	}
-	return phone
 }
 
 func validatePhoneNumber(phone string) bool {
@@ -301,7 +386,258 @@ func validateEmail(email string) bool {
 	return re.MatchString(email)
 }
 
-func validatePassword(inputPassword, phoneNumber string) bool {
-	// Замените на реальную проверку пароля
-	return inputPassword == "1234"
+func validatePassword(login, password string) (*AuthResponse, error) {
+	url := "https://api.test.fanzilla.app/graphql"
+
+	query := `mutation Login($login: String!, $password: String!) {
+        auth {
+            login(login: $login, password: $password) {
+                accessToken
+                idToken
+                refreshToken
+            }
+        }
+    }`
+
+	variables := map[string]interface{}{
+		"login":    login,
+		"password": password,
+	}
+
+	requestBody := map[string]interface{}{
+		"query":     query,
+		"variables": variables,
+	}
+
+	reqBody, err := json.Marshal(requestBody)
+	if err != nil {
+		log.Printf("Error marshalling request body: %v", err)
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		log.Printf("Error creating request: %v", err)
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Error sending request: %v", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error reading response body: %v", err)
+		return nil, err
+	}
+
+	var result AuthResponse
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		log.Printf("Error parsing authentication response: %v", err)
+		return nil, err
+	}
+
+	log.Printf("Parsed response: %+v", result)
+	if result.Data.Auth.Login.IDToken == "" {
+		log.Printf("Received empty ID token. IDToken: %v", result.Data.Auth.Login.IDToken)
+		return nil, fmt.Errorf("authentication error: ID token is empty")
+	}
+
+	return &result, nil
+}
+
+// registerUser функция для отправки запроса на регистрацию пользователя
+func registerUser(phone, captchaCode string) (*RegistrationResponse, error) {
+	url := "https://api.test.fanzilla.app/graphql"
+
+	query := `mutation RegisterUser($phone: String!, $captchaCode: String!) {
+		registration {
+			simpleUserRegistration(phone: $phone, captchaCode: $captchaCode) {
+				login
+			}
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"phone":       phone,
+		"captchaCode": captchaCode,
+	}
+
+	requestBody := map[string]interface{}{
+		"query":     query,
+		"variables": variables,
+	}
+
+	reqBody, err := json.Marshal(requestBody)
+	if err != nil {
+		log.Printf("Error marshalling request body: %v", err)
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		log.Printf("Error creating request: %v", err)
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Error sending request: %v", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error reading response body: %v", err)
+		return nil, err
+	}
+
+	var result RegistrationResponse
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		log.Printf("Error unmarshalling response: %v", err)
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Error: Non-OK HTTP status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("non-OK HTTP status: %d", resp.StatusCode)
+	}
+
+	return &result, nil
+}
+
+func updateProfile(idToken, fullName, birthDate, phone, email string) (*UpdateProfileResponse, error) {
+	url := "https://api.test.fanzilla.app/graphql"
+
+	query := `mutation UpdateUserProfile($user: ProfileUpdateInput!) {
+		users {
+			updateProfile(user: $user) {
+				id
+			}
+		}
+	}`
+
+	fullNameParts := strings.Split(fullName, " ")
+	if len(fullNameParts) < 3 {
+		return nil, fmt.Errorf("invalid fullName format, expected 'FirstName LastName Patronymic'")
+	}
+
+	name, surname, patronymic := fullNameParts[0], fullNameParts[1], fullNameParts[2]
+
+	variables := map[string]interface{}{
+		"user": map[string]interface{}{
+			"person": map[string]interface{}{
+				"name": map[string]string{
+					"ru": name,
+					"en": name,
+				},
+				"surname": map[string]string{
+					"ru": surname,
+					"en": surname,
+				},
+				"patronymic": map[string]string{
+					"ru": patronymic,
+					"en": patronymic,
+				},
+				"birthday": birthDate,
+				"contacts": []map[string]string{
+					{"type": "PHONE", "value": phone},
+					{"type": "EMAIL", "value": email},
+				},
+			},
+		},
+	}
+
+	requestBody := map[string]interface{}{
+		"query":     query,
+		"variables": variables,
+	}
+
+	reqBody, err := json.Marshal(requestBody)
+	if err != nil {
+		log.Printf("Error marshalling request body: %v", err)
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		log.Printf("Error creating request: %v", err)
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", idToken))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Error sending request: %v", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error reading response body: %v", err)
+		return nil, err
+	}
+
+	var result UpdateProfileResponse
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		log.Printf("Error unmarshalling response: %v", err)
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Error: Non-OK HTTP status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("non-OK HTTP status: %d", resp.StatusCode)
+	}
+
+	return &result, nil
+}
+
+// RegistrationResponse структура для парсинга ответа от GraphQL
+type RegistrationResponse struct {
+	Data struct {
+		RegisterUserAndLogin struct {
+			IDToken string `json:"idToken"`
+		} `json:"registerUserAndLogin"`
+	} `json:"data"`
+}
+
+type AuthResult struct {
+	AccessToken  string
+	IDToken      string
+	RefreshToken string
+}
+
+type User struct {
+	ID     string `json:"id"`
+	Login  string `json:"login"`
+	Person struct {
+		FirstName string `json:"firstName"`
+		LastName  string `json:"lastName"`
+	} `json:"person"`
+}
+
+func saveTokenToFile(token string) error {
+	file, err := os.Create("user_id_token.txt")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(token)
+	if err != nil {
+		return err
+	}
+	return nil
 }
