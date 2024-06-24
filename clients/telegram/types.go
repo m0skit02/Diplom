@@ -37,16 +37,16 @@ type CreateOrderResponse struct {
 	Data struct {
 		Order struct {
 			Create struct {
-				ID                     string  `json:"id"`
-				User                   User    `json:"user"`
-				Status                 string  `json:"status"`
-				CreatedTime            string  `json:"createdTime"`
-				Items                  []Item  `json:"items"`
-				Price                  float64 `json:"price"`
-				PriceWithDiscount      float64 `json:"priceWithDiscount"`
-				VisibleID              string  `json:"visibleId"`
-				AppliedPromocode       string  `json:"appliedPromocode"`
-				PromocodeValidUntil    string  `json:"promocodeValidUntil"`
+				ID                     string `json:"id"`
+				User                   User   `json:"user"`
+				Status                 string `json:"status"`
+				CreatedTime            string `json:"createdTime"`
+				Items                  []Item `json:"items"`
+				Price                  string `json:"price"`
+				PriceWithDiscount      string `json:"priceWithDiscount"`
+				VisibleID              string `json:"visibleId"`
+				AppliedPromocode       string `json:"appliedPromocode"`
+				PromocodeValidUntil    string `json:"promocodeValidUntil"`
 				NotificationProperties struct {
 					EnableEmail   bool   `json:"enableEmail"`
 					EnableSms     bool   `json:"enableSms"`
@@ -58,22 +58,21 @@ type CreateOrderResponse struct {
 	} `json:"data"`
 }
 
-// Структуры для резервирования билета
 type ReserveTicketResponse struct {
 	Data struct {
 		Ticket struct {
-			ReserveByPlace struct {
+			ReserveByPlace []struct {
 				ID     string `json:"id"`
 				Status string `json:"status"`
 				Place  struct {
 					ID          string `json:"id"`
-					Number      int    `json:"number"`
+					Number      string `json:"number"`
 					Coordinates struct {
-						X int `json:"x"`
-						Y int `json:"y"`
+						X float64 `json:"x"`
+						Y float64 `json:"y"`
 					} `json:"coordinates"`
 					Row struct {
-						Number int `json:"number"`
+						Number string `json:"number"`
 						Sector struct {
 							Title string `json:"title"`
 						} `json:"sector"`
@@ -95,20 +94,20 @@ type ReserveTicketResponse struct {
 						Type   string `json:"type"`
 						Status string `json:"status"`
 						Item   struct {
-							ID     string  `json:"id"`
-							Price  float64 `json:"price"`
-							Status string  `json:"status"`
+							ID     string `json:"id"`
+							Price  string `json:"price"`
+							Status string `json:"status"`
 							Place  struct {
 								ID     string `json:"id"`
-								Number int    `json:"number"`
+								Number string `json:"number"`
 							} `json:"place"`
 							Venue struct {
 								ID    string `json:"id"`
 								Title string `json:"title"`
 							} `json:"venue"`
 						} `json:"item"`
-						Price             float64 `json:"price"`
-						PriceWithDiscount float64 `json:"priceWithDiscount"`
+						Price             string `json:"price"`
+						PriceWithDiscount string `json:"priceWithDiscount"`
 					} `json:"items"`
 				} `json:"order"`
 				User struct {
@@ -126,21 +125,21 @@ type ApplyPromocodeResponse struct {
 	Data struct {
 		Order struct {
 			ApplyPromocode struct {
-				ID                string  `json:"id"`
-				Status            string  `json:"status"`
-				Price             float64 `json:"price"`
-				PriceWithDiscount float64 `json:"priceWithDiscount"`
-				AppliedPromocode  string  `json:"appliedPromocode"`
+				ID                string `json:"id"`
+				Status            string `json:"status"`
+				Price             string `json:"price"`
+				PriceWithDiscount string `json:"priceWithDiscount"`
+				AppliedPromocode  string `json:"appliedPromocode"`
 				AdditionalData    struct {
 					LoyaltyAmount float64 `json:"loyaltyAmount"`
 				} `json:"additionalData"`
 				Items []struct {
-					ID                string  `json:"id"`
-					Title             string  `json:"title"`
-					Price             float64 `json:"price"`
-					PriceWithDiscount float64 `json:"priceWithDiscount"`
-					LoyaltyUsed       bool    `json:"loyaltyUsed"`
-					ReservedUntil     string  `json:"reservedUntil"`
+					ID                string `json:"id"`
+					Title             string `json:"title"`
+					Price             string `json:"price"`
+					PriceWithDiscount string `json:"priceWithDiscount"`
+					LoyaltyUsed       string `json:"loyaltyUsed"`
+					ReservedUntil     string `json:"reservedUntil"`
 				} `json:"items"`
 			} `json:"applyPromocode"`
 		} `json:"order"`

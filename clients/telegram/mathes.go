@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -116,9 +117,14 @@ func createOrder(userID, token string) (*CreateOrderResponse, error) {
 	url := "https://api.test.fanzilla.app/graphql"
 
 	query := `
-	mutation CreateOrder {
+	mutation CreateOrder(
+  $userID: ID!
+) {
+  
     order {
-        create(id: {"d5956b64-c160-103e-9542-ebc0d060c136"}) {
+        create(data: {
+      userId: $userID
+    }) {
             id
             user { id login }
             status
@@ -140,7 +146,7 @@ func createOrder(userID, token string) (*CreateOrderResponse, error) {
 }`
 
 	variables := map[string]interface{}{
-		"userId": userID,
+		"userID": "22b95822-c681-103e-9562-ebc0d060c136",
 	}
 
 	requestBody := map[string]interface{}{
@@ -159,7 +165,7 @@ func createOrder(userID, token string) (*CreateOrderResponse, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoiZzJGNWh6eWgzZGNvQzZqRkZVdlJ6QTdnMFRraEFlM0x6ZThVTEFmYmt5ST0iLCJzdWIiOiJDaVJrTlRrMU5tSTJOQzFqTVRZd0xURXdNMlV0T1RVME1pMWxZbU13WkRBMk1HTXhNellTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzIwMDI0NzcyfQ.UibEi0ZhGkxkZP7YF3ONikrR5SyLnXgbkBTQYL75BdUjEKiAxE6Jz32utIWkrEhXv59QUIBPZXBpcms_Sct6LQ")
+	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoib200S0s4YXJleHhqaEtFRkdQM2xSbkNSNVBleEZXMkQ3M1o4ZHFRbFh5ND0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzIwMDIzODE2fQ.QXT5b4fikgjJQSrpjfAdS8qvYyPc4LKojfo2-jD0FhfRKhBDDeuFYjpIVlv43uM8f10TMyA0MpaYrSx337-gLg")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -244,7 +250,7 @@ func getAvailablePlaces(eventId, token string) ([]Place, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoib200S0s4YXJleHhqaEtFRkdQM2xSbkNSNVBleEZXMkQ3M1o4ZHFRbFh5ND0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzIwMDIzODE2fQ.QXT5b4fikgjJQSrpjfAdS8qvYyPc4LKojfo2-jD0FhfRKhBDDeuFYjpIVlv43uM8f10TMyA0MpaYrSx337-gLg")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -254,7 +260,7 @@ func getAvailablePlaces(eventId, token string) ([]Place, error) {
 	}
 	defer resp.Body.Close()
 
-	responseBody, err := ioutil.ReadAll(resp.Body)
+	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Error reading response body: %v", err)
 		return nil, err
@@ -301,6 +307,7 @@ func applyPromocodeToOrder(orderId, token string) (*ApplyPromocodeResponse, erro
 				status
 				price
 				priceWithDiscount
+				promocodeValidUntil
 				appliedPromocode
 				additionalData { loyaltyAmount }
 				items {
@@ -311,7 +318,7 @@ func applyPromocodeToOrder(orderId, token string) (*ApplyPromocodeResponse, erro
 	}`
 
 	promocode := "BOT"
-	validUntil := time.Now().Add(24 * time.Hour).UTC().Format("2006-01-02T15:04:05Z07:00")
+	validUntil := time.Now().Add(48 * time.Hour).UTC().Format("2006-01-02T15:04:05Z")
 	// Setting the validUntil to 24 hours from now in ISO 8601 format
 	variables := map[string]interface{}{
 		"orderId":    orderId,
@@ -335,7 +342,7 @@ func applyPromocodeToOrder(orderId, token string) (*ApplyPromocodeResponse, erro
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoib200S0s4YXJleHhqaEtFRkdQM2xSbkNSNVBleEZXMkQ3M1o4ZHFRbFh5ND0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzIwMDIzODE2fQ.QXT5b4fikgjJQSrpjfAdS8qvYyPc4LKojfo2-jD0FhfRKhBDDeuFYjpIVlv43uM8f10TMyA0MpaYrSx337-gLg")
 
 	// Logging request headers
 	log.Printf("Request Headers: %v", req.Header)
@@ -439,6 +446,10 @@ func setOrderNotification(orderId, token string) (*SetOrderNotificationResponse,
 func makePaymentLink(orderId, adapterName, overrideEmail, overridePhone, token string) (*MakePaymentLinkResponse, error) {
 	url := "https://api.test.fanzilla.app/graphql"
 
+	log.Print(adapterName)
+	log.Print(overrideEmail)
+	log.Print(overridePhone)
+
 	query := `
 	mutation MakePaymentLink($orderId: ID!, $adapterName: String!, $overrideEmail: String!, $overridePhone: String!) {
 		payments {
@@ -475,7 +486,7 @@ func makePaymentLink(orderId, adapterName, overrideEmail, overridePhone, token s
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoiOGU0cDMxdmV6amNzaUk1QmhDc2w3cE5rbVFqK0tVSlJIdjFMZCs1YkJRRT0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzE5MjY1MTEyfQ.YKkR5RU6tgBdFvuOHrafrHSbQjzT78lXzX4RX1Il4Oz4RC_dn9dr7bCFPG42OYExO7-cfgbOuGFFnWOOZFC1-g")
+	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoib200S0s4YXJleHhqaEtFRkdQM2xSbkNSNVBleEZXMkQ3M1o4ZHFRbFh5ND0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzIwMDIzODE2fQ.QXT5b4fikgjJQSrpjfAdS8qvYyPc4LKojfo2-jD0FhfRKhBDDeuFYjpIVlv43uM8f10TMyA0MpaYrSx337-gLg")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -548,9 +559,10 @@ func handleMatchSelection(c *Client, update tgbotapi.Update, userState *UserStat
 
 	// Преобразование userState.ChatID в строку
 	userID := strconv.FormatInt(userState.ChatID, 10)
-
+	log.Print(userID, "----------------")
 	// Создание заказа для пользователя
 	orderResponse, err := createOrder(userID, userState.IDToken)
+	log.Println(orderResponse)
 	if err != nil {
 		log.Printf("Error creating order: %v", err)
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при создании заказа: "+err.Error())
@@ -559,7 +571,7 @@ func handleMatchSelection(c *Client, update tgbotapi.Update, userState *UserStat
 	}
 
 	// Резервирование билета для пользователя
-	ticketReservationResponse, err := reserveTicketByPlace(selectedMatch.ID, selectedPlace.ID, orderResponse.Data.Order.Create.ID, userID, userState.IDToken)
+	_, err = reserveTicketByPlace(selectedMatch.ID, selectedPlace.ID, orderResponse.Data.Order.Create.ID)
 	if err != nil {
 		log.Printf("Error reserving ticket: %v", err)
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при резервировании билета: "+err.Error())
@@ -596,12 +608,12 @@ func handleMatchSelection(c *Client, update tgbotapi.Update, userState *UserStat
 
 	// Использование ответа для отправки сообщения пользователю
 	msgText := fmt.Sprintf(
-		"Билет на матч %s успешно зарезервирован!\nНомер заказа: %s\nМесто: %s\nСтадион: %s\nЛокация: %s\nПримененный промокод: %s\nЦена со скидкой: %.2f\nУведомления: Email - %t, SMS - %t\nСсылка на оплату: %s (действительна до: %s)",
+		"Билет на матч %s успешно зарезервирован!\nНомер заказа: %s\nМесто: %s\nСтадион: %s\nЛокация: %s\nПримененный промокод: %s\nЦена со скидкой: %v\nУведомления: Email - %t, SMS - %t\nСсылка на оплату: %s (действительна до: %s)",
 		selectedMatch.Title,
 		orderResponse.Data.Order.Create.ID,
 		selectedPlace.ID,
-		ticketReservationResponse.Data.Ticket.ReserveByPlace.Venue.Title,
-		ticketReservationResponse.Data.Ticket.ReserveByPlace.Venue.Location,
+		selectedMatch.Venue.Title,
+		selectedMatch.Venue.Location,
 		promocodeResponse.Data.Order.ApplyPromocode.AppliedPromocode,
 		promocodeResponse.Data.Order.ApplyPromocode.PriceWithDiscount,
 		notificationResponse.Data.Order.SetOrderNotification.NotificationProperties.EnableEmail,
@@ -613,53 +625,95 @@ func handleMatchSelection(c *Client, update tgbotapi.Update, userState *UserStat
 	c.Bot.Send(msg)
 }
 
-// reserveTicketByPlace резервирует билет для указанного пользователя на указанное место.
-func reserveTicketByPlace(eventId, placeId, orderId, userId, token string) (*ReserveTicketResponse, error) {
+func reserveTicketByPlace(eventId, placeId, orderId string) (*ReserveTicketResponse, error) {
+
+	log.Print(orderId)
+	log.Print(placeId)
+	log.Print(eventId)
 	url := "https://api.test.fanzilla.app/graphql"
 
 	query := `
-	mutation ReserveTicketByPlace($eventId: ID!, $placeId: ID!, $orderId: ID!, $userId: ID!) {
-		ticket {
-			reserveByPlace(data: {
-				eventId: $eventId,
-				placeIds: [$placeId],
-				tag: ONLINE,
-				orderId: $orderId,
-				userId: $userId
-			}, ignoreAdminBlocking: false) {
-				id
-				status
-				place {
-					id
-					number
-					coordinates { x y }
-					row {
-						number
-						sector { title }
-					}
-				}
-				venue { id title description location }
-				order {
-					id
-					status
-					createdTime
-					items {
-						id title type status
-						item { ... on Ticket { id price status place { id number } venue { id title } } }
-						price
-						priceWithDiscount
-					}
-				}
-				user { id login visibleId }
-			}
-		}
-	}`
+	mutation ReserveTicketByPlace(
+	  $eventId: ID!
+	  $placeIds: [ID!]!
+	  $orderId: ID
+	  $userId: ID
+	){
+	  ticket {
+	    reserveByPlace(data: {
+	      eventId: $eventId,
+	      placeIds: $placeIds,
+	      tag: ONLINE,
+	      orderId: $orderId,
+	      userId: $userId
+	    },
+	    ignoreAdminBlocking: false
+	    ) {
+	      id
+	      status
+	      place {
+	        id
+	        number
+	        coordinates {
+	          x
+	          y
+	        }
+	        row {
+	          number
+	          sector {
+	            title
+	          }
+	        }
+	      }
+	      venue {
+	        id
+	        title
+	        description
+	        location
+	      }
+	      order {
+	        id
+	        status
+	        createdTime
+	        items {
+	          id
+	          title
+	          type
+	          status
+	          item {
+	            ... on Ticket {
+	              id
+	              price
+	              status
+	              place {
+	                id
+	                number
+	              }
+	              venue {
+	                id
+	                title
+	              }
+	            }
+	          }
+	          price
+	          priceWithDiscount
+	        }
+	      }
+	      user {
+	        id
+	        login
+	        visibleId
+	      }
+	    }
+	  }
+	}
+	`
 
 	variables := map[string]interface{}{
-		"eventId": eventId,
-		"placeId": placeId,
-		"orderId": orderId,
-		"userId":  userId,
+		"eventId":  eventId,
+		"placeIds": []string{placeId}, // исправлено на массив строк
+		"orderId":  orderId,
+		"userId":   "22b95822-c681-103e-9562-ebc0d060c136",
 	}
 
 	requestBody := map[string]interface{}{
@@ -678,7 +732,7 @@ func reserveTicketByPlace(eventId, placeId, orderId, userId, token string) (*Res
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoicGF3dXNpTFJzNmRJOThUVnJkL2hTa1V3OGFBRTdVWXpZSU50YXFPL3BZbz0iLCJzdWIiOiJDaVJrTlRrMU5tSTJOQzFqTVRZd0xURXdNMlV0T1RVME1pMWxZbU13WkRBMk1HTXhNellTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzE5Nzk5NTEyfQ.iFqcw57kEP5fDypFpDWT-Df8UPlti78ij5M6P8bcz3W0QpriFBa-iirEXG-3BMP41fzJbEhRhLWR8szlbutlnQ")
+	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoib200S0s4YXJleHhqaEtFRkdQM2xSbkNSNVBleEZXMkQ3M1o4ZHFRbFh5ND0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzIwMDIzODE2fQ.QXT5b4fikgjJQSrpjfAdS8qvYyPc4LKojfo2-jD0FhfRKhBDDeuFYjpIVlv43uM8f10TMyA0MpaYrSx337-gLg")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -689,7 +743,6 @@ func reserveTicketByPlace(eventId, placeId, orderId, userId, token string) (*Res
 
 	responseBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Error sending request: %v", err)
 		return nil, err
 	}
 
@@ -698,9 +751,7 @@ func reserveTicketByPlace(eventId, placeId, orderId, userId, token string) (*Res
 		log.Printf("Error parsing reservation response: %v, Response: %s", err, string(responseBody))
 		return nil, err
 	}
-	log.Printf("Request body for reservation: %s", string(reqBody))
 
-	// Логируем успешный результат
 	log.Printf("Reservation successful: %+v", result)
 	return &result, nil
 }
