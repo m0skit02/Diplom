@@ -159,7 +159,7 @@ func createOrder(userID, token string) (*CreateOrderResponse, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoiL0NQMEFWd1AwazNqMkhBTzZPakVhcnQ2VjRoV1FPNWd3bEdoQU9lQUZMaz0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzE5Nzk5NjQzfQ.4wgihWyhdQfOAmnMb8QpyFLW2FF8RXz4X6yvzOPdMpxvp4xazfb_NCXI2Ca6ykcbPFByLchfYVrdb8YTsO3NeA")
+	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoiZzJGNWh6eWgzZGNvQzZqRkZVdlJ6QTdnMFRraEFlM0x6ZThVTEFmYmt5ST0iLCJzdWIiOiJDaVJrTlRrMU5tSTJOQzFqTVRZd0xURXdNMlV0T1RVME1pMWxZbU13WkRBMk1HTXhNellTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzIwMDI0NzcyfQ.UibEi0ZhGkxkZP7YF3ONikrR5SyLnXgbkBTQYL75BdUjEKiAxE6Jz32utIWkrEhXv59QUIBPZXBpcms_Sct6LQ")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -290,11 +290,11 @@ func getAvailablePlaces(eventId, token string) ([]Place, error) {
 }
 
 // applyPromocodeToOrder применяет промокод к указанному заказу.
-func applyPromocodeToOrder(orderId, promocode, validUntil, token string) (*ApplyPromocodeResponse, error) {
+func applyPromocodeToOrder(orderId, token string) (*ApplyPromocodeResponse, error) {
 	url := "https://api.test.fanzilla.app/graphql"
 
 	query := `
-	mutation ApplyPromocodeToOrder($orderId: ID!, $validUntil: String!) {
+	mutation ApplyPromocodeToOrder($orderId: ID!, $promocode: String!, $validUntil: Datetime!) {
 		order {
 			applyPromocode(orderId: $orderId, promocode: $promocode, until: $validUntil) {
 				id
@@ -310,7 +310,9 @@ func applyPromocodeToOrder(orderId, promocode, validUntil, token string) (*Apply
 		}
 	}`
 
-	promocode = "BOT"
+	promocode := "BOT"
+	validUntil := time.Now().Add(24 * time.Hour).UTC().Format("2006-01-02T15:04:05Z07:00")
+	// Setting the validUntil to 24 hours from now in ISO 8601 format
 	variables := map[string]interface{}{
 		"orderId":    orderId,
 		"promocode":  promocode,
@@ -331,10 +333,12 @@ func applyPromocodeToOrder(orderId, promocode, validUntil, token string) (*Apply
 	if err != nil {
 		return nil, err
 	}
-	token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoiOGU0cDMxdmV6amNzaUk1QmhDc2w3cE5rbVFqK0tVSlJIdjFMZCs1YkJRRT0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzE5MjY1MTEyfQ.YKkR5RU6tgBdFvuOHrafrHSbQjzT78lXzX4RX1Il4Oz4RC_dn9dr7bCFPG42OYExO7-cfgbOuGFFnWOOZFC1-g"
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
+
+	// Logging request headers
+	log.Printf("Request Headers: %v", req.Header)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -564,7 +568,7 @@ func handleMatchSelection(c *Client, update tgbotapi.Update, userState *UserStat
 	}
 
 	// Применение промокода к заказу
-	promocodeResponse, err := applyPromocodeToOrder(orderResponse.Data.Order.Create.ID, "BOT", "2024-06-20T23:39:54.545152Z", userState.IDToken)
+	promocodeResponse, err := applyPromocodeToOrder(orderResponse.Data.Order.Create.ID, userState.IDToken)
 	if err != nil {
 		log.Printf("Error applying promocode: %v", err)
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при применении промокода: "+err.Error())
