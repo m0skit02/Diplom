@@ -853,3 +853,36 @@ func reserveTicketByPlace(eventId, placeId, orderId string) (*ReserveTicketRespo
 	log.Printf("Reservation successful: %+v", result)
 	return &result, nil
 }
+
+var lastMatchID string
+var chatIDs = []int64{123456789, 987654321} // Список chat IDs, которым нужно отправлять уведомления
+
+func sendNotificationToUsers(match Match, chatIDs []int64, bot *tgbotapi.BotAPI) {
+	message := "У нас появился новый запланированный матч. Ознакомьтесь с детальной информацией с помощью кнопки \"Предстоящие матчи\"."
+
+	for _, chatID := range chatIDs {
+		msg := tgbotapi.NewMessage(chatID, message)
+		_, err := bot.Send(msg)
+		if err != nil {
+			log.Printf("Error sending message to chat %d: %v", chatID, err)
+		}
+	}
+}
+func checkForNewMatches(userToken string, chatID int64, bot *tgbotapi.BotAPI) {
+	matches, err := getMatchesForTeam(userToken)
+	if err != nil {
+		log.Printf("Error getting matches for chat %d: %v", chatID, err)
+		return
+	}
+
+	if len(matches) == 0 {
+		log.Println("No matches found.")
+		return
+	}
+
+	newMatch := matches[0]
+	if newMatch.ID != lastMatchID {
+		lastMatchID = newMatch.ID
+		sendNotificationToUsers(newMatch, []int64{chatID}, bot)
+	}
+}

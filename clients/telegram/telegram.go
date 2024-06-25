@@ -64,6 +64,8 @@ func (c *Client) ListenForUpdates() error {
 		return err
 	}
 
+	go c.startCheckingMatchesForAllUsers()
+
 	for update := range updates {
 		if update.Message == nil && update.CallbackQuery == nil {
 			continue
@@ -71,6 +73,19 @@ func (c *Client) ListenForUpdates() error {
 		c.handleUpdate(update)
 	}
 	return nil
+}
+
+func (c *Client) startCheckingMatchesForAllUsers() {
+	// Начинаем проверку каждые 5 минут.
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		for chatID, userState := range userStates {
+			checkForNewMatches(userState.IDToken, chatID, c.Bot)
+		}
+		<-ticker.C
+	}
 }
 
 func handleMainMenu(c *Client, update tgbotapi.Update, userState *UserState) {

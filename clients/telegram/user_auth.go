@@ -663,27 +663,3 @@ func updateProfile(idToken, fullName, birthDate, phone, email string) (*UpdatePr
 
 	return &result, nil
 }
-
-// RegistrationResponse структура для парсинга ответа от GraphQL
-type RegistrationResponse struct {
-	Data struct {
-		RegisterUserAndLogin struct {
-			IDToken string `json:"idToken"`
-		} `json:"registerUserAndLogin"`
-	} `json:"data"`
-}
-
-type AuthResult struct {
-	AccessToken  string
-	IDToken      string
-	RefreshToken string
-}
-
-type User struct {
-	ID     string `json:"id"`
-	Login  string `json:"login"`
-	Person struct {
-		FirstName string `json:"firstName"`
-		LastName  string `json:"lastName"`
-	} `json:"person"`
-}
