@@ -39,21 +39,6 @@ func main() {
 		log.Fatalf("Error loading config: %v", err)
 	}
 
-	//// Авторизация бота при запуске
-	//if err = telegram.AuthorizeBot(); err != nil {
-	//	log.Fatalf("Error authorizing bot: %v", err)
-	//}
-	//
-	//// Обновление токена каждые 30 дней
-	//go func() {
-	//	for {
-	//		time.Sleep(30 * 24 * time.Hour)
-	//		if err := telegram.AuthorizeBot(); err != nil {
-	//			log.Printf("Error refreshing bot token: %v", err)
-	//		}
-	//	}
-	//}()
-
 	bot, err := telegram.New(config.TelegramBotToken)
 	if err != nil {
 		log.Panic(err)

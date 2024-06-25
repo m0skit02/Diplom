@@ -77,7 +77,7 @@ func (c *Client) ListenForUpdates() error {
 
 func (c *Client) startCheckingMatchesForAllUsers() {
 	// Начинаем проверку каждые 5 минут.
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {

@@ -174,7 +174,7 @@ func handleVerificationCodeStep(c *Client, update tgbotapi.Update, userState *Us
 		return
 	}
 
-	if !validateVerificationCode(userState.PhoneNumber, update.Message.Text) {
+	if !validateVerificationCode(userState.PhoneNumber, update.Message.Text, userState) {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Неверный код подтверждения. Пожалуйста, попробуйте снова:")
 		c.Bot.Send(msg)
 		return
@@ -241,7 +241,8 @@ func handleEmailStep(c *Client, update tgbotapi.Update, userState *UserState) {
 	log.Println(Transliterate(userState.Surname))
 	log.Println(Transliterate(userState.Name))
 	log.Println(Transliterate(userState.Patronymic))
-	resp, err := registerUser(userState.PhoneNumber, userState.CaptchaCode)
+
+	_, err := registerUser(userState.PhoneNumber, userState.CaptchaCode)
 	if err != nil {
 		log.Printf("Error registering user: %v", err)
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Произошла ошибка при регистрации. Попробуйте позже.")
@@ -249,16 +250,13 @@ func handleEmailStep(c *Client, update tgbotapi.Update, userState *UserState) {
 		return
 	}
 
-	// Проверяем, что IDToken существует и не пуст
-	if resp.Data.RegisterUserAndLogin.IDToken == "" {
-		log.Printf("Received empty ID token during registration. IDToken: %v", resp.Data.RegisterUserAndLogin.IDToken)
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка регистрации: не получен токен доступа.")
+	updateProfileResp, err := updateProfile(userState.IDToken, userState.Name, userState.Surname, userState.Patronymic, userState.BirthDate, userState.PhoneNumber, userState.Email)
+	if updateProfileResp.Data == nil {
+		log.Printf("Received empty ID token during registration. IDToken: %v", userState.IDToken)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка регистрации: небыл получен ID пользователя при обновлении.")
 		c.Bot.Send(msg)
 		return
 	}
-
-	// Сохранение IDToken для будущих запросов
-	userState.IDToken = resp.Data.RegisterUserAndLogin.IDToken
 
 	// Логирование для проверки присвоения токена
 	log.Printf("User IDToken assigned after registration: %v", userState.IDToken)
@@ -358,14 +356,13 @@ func validatePhoneNumber(phone string) bool {
 	return re.MatchString(phone)
 }
 
-func validateVerificationCode(phoneNumber string, inputCode string) bool {
+func validateVerificationCode(phoneNumber string, inputCode string, state *UserState) bool {
 	authResp, err := validatePassword(phoneNumber, inputCode)
 	if err != nil {
 		log.Printf("Не удалось пройти авторизаци: %v", err)
 	}
-
 	log.Printf("Ответ от авторизации %v", &authResp.Data.Auth.Login)
-
+	state.IDToken = authResp.Data.Auth.Login.IDToken
 	if authResp.Data != nil {
 		return true
 	} else {
@@ -447,10 +444,18 @@ func validatePassword(login, password string) (*AuthResponse, error) {
 		return nil, err
 	}
 
+	log.Print(responseBody)
+
 	var result AuthResponse
 	if err := json.Unmarshal(responseBody, &result); err != nil {
 		log.Printf("Error parsing authentication response: %v", err)
 		return nil, err
+	}
+
+	log.Printf("Parsed response: %+v", result)
+	if result.Data == nil {
+		log.Printf("Неправильный пароль")
+		return nil, fmt.Errorf("Неправильный пароль")
 	}
 
 	log.Printf("Parsed response: %+v", result)
@@ -465,6 +470,9 @@ func validatePassword(login, password string) (*AuthResponse, error) {
 // registerUser функция для отправки запроса на регистрацию пользователя
 func registerUser(phone, captchaCode string) (*RegistrationResponse, error) {
 	url := "https://api.test.fanzilla.app/graphql"
+
+	log.Println(phone)
+	log.Println(captchaCode)
 
 	query := `mutation RegisterUser($phone: String!, $captchaCode: String!) {
 		registration {
@@ -497,7 +505,7 @@ func registerUser(phone, captchaCode string) (*RegistrationResponse, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-
+	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoib200S0s4YXJleHhqaEtFRkdQM2xSbkNSNVBleEZXMkQ3M1o4ZHFRbFh5ND0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzIwMDIzODE2fQ.QXT5b4fikgjJQSrpjfAdS8qvYyPc4LKojfo2-jD0FhfRKhBDDeuFYjpIVlv43uM8f10TMyA0MpaYrSx337-gLg")
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -517,6 +525,14 @@ func registerUser(phone, captchaCode string) (*RegistrationResponse, error) {
 		log.Printf("Error unmarshalling response: %v", err)
 		return nil, err
 	}
+	log.Print(result)
+	var result2 Errors
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		log.Printf("Error unmarshalling response: %v", err)
+		return nil, err
+	}
+	log.Print(result2)
+
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("Error: Non-OK HTTP status: %d", resp.StatusCode)
 		return nil, fmt.Errorf("non-OK HTTP status: %d", resp.StatusCode)
@@ -555,65 +571,48 @@ func Transliterate(input string) string {
 	return result.String()
 }
 
-func updateProfile(idToken, fullName, birthDate, phone, email string) (*UpdateProfileResponse, error) {
+func updateProfile(idToken, name, surname, patronymic, birthDate, phone, email string) (*UpdateProfileResponse, error) {
 	url := "https://api.test.fanzilla.app/graphql"
 
-	query := `mutation UpdateUserProfile($user: ProfileUpdateInput!) {
-		users {
-			updateProfile(user: $user) {
-				id
-				person {
-					name {
-						ru
-						en
-					}
-					surname {
-						ru
-						en
-					}
-					patronymic {
-						ru
-						en
-					}
-					birthday
-					contacts {
-						type
-						value
-					}
-				}
-			}
-		}
-	}`
-
-	fullNameParts := strings.Split(fullName, " ")
-	if len(fullNameParts) < 3 {
-		return nil, fmt.Errorf("invalid fullName format, expected 'FirstName LastName Patronymic'")
-	}
-
-	name, surname, patronymic := fullNameParts[0], fullNameParts[1], fullNameParts[2]
+	query := `mutation UpdateUserProfile(
+  $name: LocalizedString!,
+  $surname: LocalizedString!,
+  $patronymic: LocalizedString!
+) {
+  users {
+    updateProfile(user: {person: {
+      name: $name, 
+      surname: $surname, 
+      patronymic: $patronymic, 
+      birthday: "2004-04-09"
+    }}) {
+      id
+      person {
+        name
+        surname
+        patronymic
+      }
+    }
+  }
+}`
 
 	variables := map[string]interface{}{
-		"user": map[string]interface{}{
-			"password": "08704",
-			"person": map[string]interface{}{
-				"name": map[string]string{
-					"ru": name,
-					"en": Transliterate(name),
-				},
-				"surname": map[string]string{
-					"ru": surname,
-					"en": Transliterate(surname),
-				},
-				"patronymic": map[string]string{
-					"ru": patronymic,
-					"en": Transliterate(patronymic),
-				},
-				"birthday": birthDate,
-				"contacts": []map[string]string{
-					{"type": "PHONE", "value": phone},
-					{"type": "EMAIL", "value": email},
-				},
-			},
+		"name": map[string]string{
+			"ru": name,
+			"en": Transliterate(name),
+		},
+		"surname": map[string]string{
+			"ru": surname,
+			"en": Transliterate(surname),
+		},
+		"patronymic": map[string]string{
+			"ru": patronymic,
+			"en": Transliterate(patronymic),
+		},
+		"birthday": birthDate,
+		"contacts": []map[string]string{
+			{"type": "PHONE", "value": phone},
+			{"type": "EMAIL", "value": email},
 		},
 	}
 

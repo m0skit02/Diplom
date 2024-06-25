@@ -430,7 +430,7 @@ type UpdateProfileInput struct {
 }
 
 type UpdateProfileResponse struct {
-	Data struct {
+	Data *struct {
 		Users struct {
 			UpdateProfile struct {
 				ID     string `json:"id"`
@@ -462,11 +462,18 @@ type UpdateProfileResponse struct {
 
 // RegistrationResponse структура для парсинга ответа от GraphQL
 type RegistrationResponse struct {
-	Data struct {
-		RegisterUserAndLogin struct {
-			IDToken string `json:"idToken"`
-		} `json:"registerUserAndLogin"`
+	Data *struct {
+		Registration struct {
+			SimpleUserRegistration struct {
+				Login string `json:"login"`
+			} `json:"simpleUserRegistration"`
+		} `json:"registration"`
 	} `json:"data"`
+}
+
+type Errors struct {
+	Error []map[string]interface {
+	} `json:"errors"`
 }
 
 type AuthResult struct {

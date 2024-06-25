@@ -384,7 +384,7 @@ func setOrderNotification(orderId, token string) (*SetOrderNotificationResponse,
 	mutation SetOrderNotification($orderId: ID!) {
 		order {
 			setOrderNotification(orderId: $orderId, data: {
-				enableEmail: false,
+				enableEmail: true,
 				enableSms: true,
 				overrideEmail: null,
 				overridePhone: "null"
@@ -703,24 +703,17 @@ func handleMatchSelection(c *Client, update tgbotapi.Update, userState *UserStat
 		paymentLinkResponse.Data.Payments.MakePaymentLink.ExpiredIn,
 		pdfLink,
 	)
+
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, msgText)
 	c.Bot.Send(msg)
 
-	if !userState.IsSubscribed {
-		adMsg := tgbotapi.NewMessage(update.Message.Chat.ID, "Для получения следующего билета подпишитесь на наш канал: @Toporchan_Bot")
-		adMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Подписался", "subscribed"),
-			),
-		)
-		c.Bot.Send(adMsg)
-	}
+	adMsg := tgbotapi.NewMessage(update.Message.Chat.ID, "Для получения следующего билета подпишитесь на наш канал: @Toporchan_Bot")
+	c.Bot.Send(adMsg)
 
 	userState.Step = 8
 	msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Вы вернулись в главное меню.")
 	msg.ReplyMarkup = getMainMenuKeyboard()
 	c.Bot.Send(msg)
-
 }
 
 func reserveTicketByPlace(eventId, placeId, orderId string) (*ReserveTicketResponse, error) {
@@ -857,7 +850,7 @@ func reserveTicketByPlace(eventId, placeId, orderId string) (*ReserveTicketRespo
 var lastMatchID string
 var chatIDs = []int64{123456789, 987654321} // Список chat IDs, которым нужно отправлять уведомления
 
-func sendNotificationToUsers(match Match, chatIDs []int64, bot *tgbotapi.BotAPI) {
+func sendNotificationToUsers(chatIDs []int64, bot *tgbotapi.BotAPI) {
 	message := "У нас появился новый запланированный матч. Ознакомьтесь с детальной информацией с помощью кнопки \"Предстоящие матчи\"."
 
 	for _, chatID := range chatIDs {
@@ -883,6 +876,6 @@ func checkForNewMatches(userToken string, chatID int64, bot *tgbotapi.BotAPI) {
 	newMatch := matches[0]
 	if newMatch.ID != lastMatchID {
 		lastMatchID = newMatch.ID
-		sendNotificationToUsers(newMatch, []int64{chatID}, bot)
+		sendNotificationToUsers([]int64{chatID}, bot)
 	}
 }
