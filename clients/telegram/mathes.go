@@ -508,6 +508,78 @@ func makePaymentLink(orderId, adapterName, overrideEmail, overridePhone, token s
 	return &result, nil
 }
 
+func getPdfTicketLink(orderId string) (string, error) {
+	time.Sleep(5 * time.Second) // Задержка 5 секунд перед запросом PDF-билета
+
+	url := "https://api.test.fanzilla.app/graphql"
+
+	query := `
+	query PDFTicket($orderId: ID!) {
+		order {
+			getItemsPdf(orderId: $orderId) {
+				publicLink
+			}
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"orderId": orderId,
+	}
+
+	requestBody := map[string]interface{}{
+		"query":     query,
+		"variables": variables,
+	}
+
+	reqBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJhdF9oYXNoIjoib200S0s4YXJleHhqaEtFRkdQM2xSbkNSNVBleEZXMkQ3M1o4ZHFRbFh5ND0iLCJzdWIiOiJDaVF4TnpnNVl6ZzNOaTA0TWpRNUxURXdNMkl0T0dNMFppMHhZalEwWW1RMU56VTJNV1VTQkd4a1lYQT0iLCJhdWQiOiJhcHBsaWNhdGlvbnMiLCJpc3MiOiJleGFtcGxlLmNvbS9hdXRoIiwiZXhwIjoxNzIwMDIzODE2fQ.QXT5b4fikgjJQSrpjfAdS8qvYyPc4LKojfo2-jD0FhfRKhBDDeuFYjpIVlv43uM8f10TMyA0MpaYrSx337-gLg")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		Data struct {
+			Order struct {
+				GetItemsPdf struct {
+					PublicLink string `json:"publicLink"`
+				} `json:"getItemsPdf"`
+			} `json:"order"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		return "", err
+	}
+
+	if len(result.Errors) > 0 {
+		return "", fmt.Errorf("GraphQL errors: %v", result.Errors)
+	}
+
+	return result.Data.Order.GetItemsPdf.PublicLink, nil
+}
+
 func handleMatchSelection(c *Client, update tgbotapi.Update, userState *UserState) {
 	if update.Message.Text == "Назад" {
 		userState.Step = 8
@@ -606,9 +678,18 @@ func handleMatchSelection(c *Client, update tgbotapi.Update, userState *UserStat
 		return
 	}
 
+	// Получение PDF-ссылки на билет
+	pdfLink, err := getPdfTicketLink(orderResponse.Data.Order.Create.ID)
+	if err != nil {
+		log.Printf("Error getting PDF ticket link: %v", err)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Произошла ошибка, попробуйте снова.")
+		c.Bot.Send(msg)
+		return
+	}
+
 	// Использование ответа для отправки сообщения пользователю
 	msgText := fmt.Sprintf(
-		"Билет на матч %s успешно зарезервирован!\nНомер заказа: %s\nМесто: %s\nСтадион: %s\nЛокация: %s\nПримененный промокод: %s\nЦена со скидкой: %v\nУведомления: Email - %t, SMS - %t\nСсылка на оплату: %s (действительна до: %s)",
+		"Билет на матч %s успешно зарезервирован!\nНомер заказа: %s\nМесто: %s\nСтадион: %s\nЛокация: %s\nПримененный промокод: %s\nЦена со скидкой: %v\nУведомления: Email - %t, SMS - %t\nСсылка на оплату: %s (действительна до: %s)\nСсылка на PDF-билет: %s",
 		selectedMatch.Title,
 		orderResponse.Data.Order.Create.ID,
 		selectedPlace.ID,
@@ -620,9 +701,26 @@ func handleMatchSelection(c *Client, update tgbotapi.Update, userState *UserStat
 		notificationResponse.Data.Order.SetOrderNotification.NotificationProperties.EnableSms,
 		paymentLinkResponse.Data.Payments.MakePaymentLink.Link,
 		paymentLinkResponse.Data.Payments.MakePaymentLink.ExpiredIn,
+		pdfLink,
 	)
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, msgText)
 	c.Bot.Send(msg)
+
+	if !userState.IsSubscribed {
+		adMsg := tgbotapi.NewMessage(update.Message.Chat.ID, "Для получения следующего билета подпишитесь на наш канал: @Toporchan_Bot")
+		adMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("Подписался", "subscribed"),
+			),
+		)
+		c.Bot.Send(adMsg)
+	}
+
+	userState.Step = 8
+	msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Вы вернулись в главное меню.")
+	msg.ReplyMarkup = getMainMenuKeyboard()
+	c.Bot.Send(msg)
+
 }
 
 func reserveTicketByPlace(eventId, placeId, orderId string) (*ReserveTicketResponse, error) {

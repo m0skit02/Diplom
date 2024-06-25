@@ -58,6 +58,8 @@ func (c *Client) handleUpdate(update tgbotapi.Update) {
 		handleMatchSelection(c, update, userState)
 	case 12:
 		handleSubscription(c, update, userState)
+	default:
+		handleUnknownCommand(c, update, userState)
 	}
 }
 
@@ -73,7 +75,7 @@ func (c *Client) ListenForUpdates() error {
 		if update.Message == nil && update.CallbackQuery == nil {
 			continue
 		}
-		c.handleUpdate(update) // убедитесь, что используете 'с' как ссылку на экземпляр 'Client'
+		c.handleUpdate(update)
 	}
 	return nil
 }
@@ -120,6 +122,8 @@ func handleMainMenu(c *Client, update tgbotapi.Update, userState *UserState) {
 		c.Bot.Send(msg)
 
 		userState.Step = 10 // Переход к выбору конкретного матча
+	} else {
+		handleUnknownCommand(c, update, userState)
 	}
 }
 
@@ -157,10 +161,22 @@ func getMainMenuKeyboard() tgbotapi.ReplyKeyboardMarkup {
 	return keyboard
 }
 
-func getMatchSelectionKeyboard() tgbotapi.ReplyKeyboardMarkup {
-	buttons := []tgbotapi.KeyboardButton{
-		tgbotapi.NewKeyboardButton("Назад"),
+func (c *Client) handleSubscription(update tgbotapi.Update, userState *UserState) {
+	if update.CallbackQuery != nil && update.CallbackQuery.Data == "subscribed" {
+		msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Спасибо за подписку!")
+		c.Bot.Send(msg)
+		userState.IsSubscribed = true // Устанавливаем флаг подписки
+		userState.Step = 8
+		msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Вы вернулись в главное меню.")
+		msg.ReplyMarkup = getMainMenuKeyboard()
+		c.Bot.Send(msg)
+		c.Bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Подписка подтверждена!"))
 	}
-	keyboard := tgbotapi.NewReplyKeyboard(buttons)
-	return keyboard
+}
+
+// Функция для обработки неверных команд
+func handleUnknownCommand(c *Client, update tgbotapi.Update, userState *UserState) {
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Неверная команда. Пожалуйста, выберите одну из доступных опций.")
+	msg.ReplyMarkup = getMainMenuKeyboard() // Показываем главное меню
+	c.Bot.Send(msg)
 }
