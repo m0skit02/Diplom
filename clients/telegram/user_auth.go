@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 
@@ -264,13 +263,6 @@ func handleEmailStep(c *Client, update tgbotapi.Update, userState *UserState) {
 	// Логирование для проверки присвоения токена
 	log.Printf("User IDToken assigned after registration: %v", userState.IDToken)
 
-	// Сохранение токена в файл
-	if err := saveTokenToFile(userState.IDToken); err != nil {
-		log.Printf("Error saving token to file: %v", err)
-	} else {
-		log.Println("Token saved to file successfully")
-	}
-
 	// Переход в главное меню после успешной регистрации
 	userState.Step = 8
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Регистрация завершена! Добро пожаловать в главное меню.")
@@ -353,13 +345,6 @@ func handleAuthorizationPasswordStep(c *Client, update tgbotapi.Update, userStat
 
 	// Логирование для проверки присвоения токена
 	log.Printf("User IDToken assigned: %v", userState.IDToken)
-
-	// Сохранение токена в файл
-	if err := saveTokenToFile(userState.IDToken); err != nil {
-		log.Printf("Error saving token to file: %v", err)
-	} else {
-		log.Println("Token saved to file successfully")
-	}
 
 	// Переход в главное меню после успешной авторизации
 	userState.Step = 8
@@ -701,18 +686,4 @@ type User struct {
 		FirstName string `json:"firstName"`
 		LastName  string `json:"lastName"`
 	} `json:"person"`
-}
-
-func saveTokenToFile(token string) error {
-	file, err := os.Create("user_id_token.txt")
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	_, err = file.WriteString(token)
-	if err != nil {
-		return err
-	}
-	return nil
 }

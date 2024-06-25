@@ -28,11 +28,6 @@ func (c *Client) handleUpdate(update tgbotapi.Update) {
 		userStates[userID] = userState
 	}
 
-	if update.CallbackQuery != nil {
-		handleSubscription(c, update, userState)
-		return
-	}
-
 	switch userState.Step {
 	case 0:
 		handleInitialStep(c, update, userState)
@@ -56,8 +51,6 @@ func (c *Client) handleUpdate(update tgbotapi.Update) {
 		handleViewMatches(c, update, userState)
 	case 10:
 		handleMatchSelection(c, update, userState)
-	case 12:
-		handleSubscription(c, update, userState)
 	default:
 		handleUnknownCommand(c, update, userState)
 	}
